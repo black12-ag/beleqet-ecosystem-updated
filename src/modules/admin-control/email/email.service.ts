@@ -83,8 +83,9 @@ export class EmailService {
       }
 
       // 4. Zero-Placeholder Token Interpolation Engine
+      const sanitizedName = user.name && user.name.trim() ? user.name.trim() : 'Valued User';
       const finalTokens: DynamicTokens = {
-        name: user.name,
+        name: sanitizedName,
         unsubscribeUrl: `https://beleqet.com/unsubscribe?uid=${user.id}`,
         ...processedTokens,
       };
@@ -96,11 +97,12 @@ export class EmailService {
       let attempts = 0;
       const maxRetries = 3;
       let lastError: Error | null = null;
+      const maskedEmail = this.maskEmail(user.email);
 
       while (attempts < maxRetries) {
         try {
           const result = await this.transporter.sendMail(user.email, subject, body);
-          this.logger.log(`Successfully dispatched [${payload.templateType}] to [${user.email}] on attempt ${attempts + 1}`);
+          this.logger.log(`Successfully dispatched [${payload.templateType}] to [${maskedEmail}] on attempt ${attempts + 1}`);
           return result;
         } catch (transportError) {
           attempts++;
@@ -119,21 +121,32 @@ export class EmailService {
         this.logger.error(`Security Block Trace: ${error.message}`);
         throw error; // Re-throw to fail the terminal trace
       }
-      this.logger.error(`Failed to send email to [${user.email}]: ${(error as Error).message}`);
+      this.logger.error(`Failed to send email to [${this.maskEmail(user.email)}]: ${(error as Error).message}`);
       throw error;
     }
   }
 
   /**
    * Safely interpolates a raw template string using matched RegExp tokens.
+   * Cleans missing placeholders so unpopulated tokens don't leak raw markup.
    *
    * @param template The raw string template (e.g. 'Hello {name}').
    * @param tokens The key-value record of strings to replace.
    * @returns The fully interpolated string ready for dispatch.
    */
   private compileAndInterpolate(template: string, tokens: DynamicTokens): string {
-    return template.replace(/\{(\w+)\}/g, (match, key) => {
-      return tokens[key] !== undefined ? String(tokens[key]) : match;
-    });
+    return template.replace(/\{(\w+)\}/g, (_match, key) => {
+      return tokens[key] !== undefined && tokens[key] !== null ? String(tokens[key]) : '';
+    }).replace(/\s+,/g, ',');
+  }
+
+  /**
+   * Masks email address to protect PII in application log output.
+   */
+  private maskEmail(email: string): string {
+    if (!email || !email.includes('@')) return '***@***';
+    const [local, domain] = email.split('@');
+    const maskedLocal = local.length > 2 ? `${local[0]}***${local[local.length - 1]}` : `${local[0]}***`;
+    return `${maskedLocal}@${domain}`;
   }
 }

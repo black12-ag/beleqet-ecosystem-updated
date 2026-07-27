@@ -31,11 +31,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
       );
     }
 
-    res.status(status).json({
+    // Preserve custom fields from HttpException responses (e.g. requiresStepUp, stepUpToken)
+    // so the frontend can consume them without regression.
+    const baseResponse = {
       statusCode: status,
       timestamp: new Date().toISOString(),
       path: req.url,
-      message: typeof message === 'string' ? message : (message as { message: string }).message,
-    });
+    };
+
+    if (typeof message === 'string') {
+      res.status(status).json({ ...baseResponse, message });
+    } else {
+      // Spread the full exception response object to preserve custom fields
+      const exceptionBody = message as Record<string, unknown>;
+      res.status(status).json({ ...baseResponse, ...exceptionBody });
+    }
   }
 }

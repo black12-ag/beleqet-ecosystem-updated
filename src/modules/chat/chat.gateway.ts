@@ -57,6 +57,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!userId || !data.roomId) return;
 
     try {
+      // Verify user is a participant of this room before allowing join
+      const participant = await this.chatService.verifyMembership(data.roomId, userId);
+      if (!participant) {
+        this.logger.warn(`User ${userId} attempted to join room ${data.roomId} without membership`);
+        client.emit('error', { message: 'You are not a member of this chat room' });
+        return;
+      }
+
       client.join(data.roomId);
       this.logger.log(`User ${userId} joined room ${data.roomId}`);
       
